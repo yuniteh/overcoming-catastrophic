@@ -68,11 +68,12 @@ class Model(Model):
                     mean_diffs = np.append(mean_diffs, mean_diff)
                     for v in range(len(self.F_accum)):
                         F_prev[v] = self.F_accum[v]/(i+1)
-                    plt.plot(range(disp_freq+1, i+2, disp_freq), mean_diffs)
-                    plt.xlabel("Number of samples")
-                    plt.ylabel("Mean absolute Fisher difference")
-                    display.display(plt.gcf())
-                    display.clear_output(wait=True)
+
+        plt.plot(range(0, num_samples-disp_freq, disp_freq), mean_diffs)
+        plt.xlabel("Number of samples")
+        plt.ylabel("Mean absolute Fisher difference")
+        display.display(plt.gcf())
+        display.clear_output(wait=True)
 
         # divide totals by number of samples
         for v in range(len(self.F_accum)):
