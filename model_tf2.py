@@ -1,28 +1,48 @@
-# import tensorflow.compat.v1 as tf
-# tf.disable_v2_behavior()
 import tensorflow as tf
 import numpy as np
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from IPython import display
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dense, BatchNormalization
 from tensorflow.keras import Model
 
+## Encoders
+class MLPenc(Model):
+    def __init__(self, latent_dim=4, name='enc'):
+        super(MLPenc, self).__init__(name=name)
+        self.dense1 = Dense(246, activation='relu')
+        self.bn1 = BatchNormalization()
+        self.dense2 = Dense(128, activation='relu')
+        self.bn2 = BatchNormalization()
+        self.dense3 = Dense(16, activation='relu')
+        self.bn3 = BatchNormalization()
+        self.latent = Dense(latent_dim, activity_regularizer=tf.keras.regularizers.l1(10e-5))
+        self.bn4 = BatchNormalization()
 
-# variable initialization functions
-def weight_variable(shape):
-    initial = tf.truncated_normal(shape, stddev=0.1)
-    return tf.Variable(initial)
+    def call(self, x):
+        x = self.dense1(x)
+        x = self.bn1(x)
+        x = self.dense2(x)
+        x = self.bn2(x)
+        x = self.dense3(x)
+        x = self.bn3(x)
+        x = self.latent(x)
+        return self.bn4(x)
 
-def bias_variable(shape):
-    initial = tf.constant(0.1, shape=shape)
-    return tf.Variable(initial)
+## Classifier
+class CLF(Model):
+    def __init__(self, n_class=7, name='clf'):
+        super(CLF, self).__init__(name=name)
+        self.dense1 = Dense(n_class)
+
+    def call(self, x):
+        return self.dense1(x)
 
 class Model(Model):
     def __init__(self, n_class=10):
         super(Model, self).__init__()
-        self.dense1 = Dense(50,activation='relu')
-        self.dense2 = Dense(n_class)
+        self.enc = MLPenc()
+        self.clf = CLF(n_class=n_class)
     
     def acc(self, x, y):
         self.y = self.call(x)
@@ -31,14 +51,13 @@ class Model(Model):
         return self.accuracy
     
     def call(self, x):
-        x = self.dense1(x)
-        return self.dense2(x)
+        x = self.enc(x)
+        return self.clf(x)
 
     def compute_fisher(self, imgset, num_samples=200, plot_diffs=False, disp_freq=10):
         # computer Fisher information for each parameter
 
         # initialize Fisher information for most recent task
-        # if not hasattr(self,"F_accum"):
         self.F_accum = []
         for v in range(len(self.trainable_weights)):
             self.F_accum.append(np.zeros(self.trainable_weights[v].get_shape().as_list()))
