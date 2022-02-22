@@ -4,6 +4,9 @@ import numpy as np
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from IPython import display
+from tensorflow.keras.layers import Dense
+from tensorflow.keras import Model
+
 
 # variable initialization functions
 def weight_variable(shape):
@@ -14,25 +17,31 @@ def bias_variable(shape):
     initial = tf.constant(0.1, shape=shape)
     return tf.Variable(initial)
 
-class Model:
-    def __init__(self, x, y_):
+class Model(Model):
+    def __init__(self, x, y_,n_class=10):
+        super(Model, self).__init__()
+        self.dense1 = Dense(50,activation='relu')
+        self.dense2 = Dense(n_class)
+        self.var_list = self.trainable_weights
+        self.y = self.dense2(self.dense1(x))
+        self.var_list = self.trainable_weights
 
         in_dim = int(x.get_shape()[1]) # 784 for MNIST
         out_dim = int(y_.get_shape()[1]) # 10 for MNIST
-
+        
         self.x = x # input placeholder
 
         # simple 2-layer network
-        W1 = weight_variable([in_dim,50])
-        b1 = bias_variable([50])
+        # W1 = weight_variable([in_dim,50])
+        # b1 = bias_variable([50])
 
-        W2 = weight_variable([50,out_dim])
-        b2 = bias_variable([out_dim])
+        # W2 = weight_variable([50,out_dim])
+        # b2 = bias_variable([out_dim])
 
-        h1 = tf.nn.relu(tf.matmul(x,W1) + b1) # hidden layer
-        self.y = tf.matmul(h1,W2) + b2 # output layer
+        # h1 = tf.nn.relu(tf.matmul(x,W1) + b1) # hidden layer
+        # self.y = tf.matmul(h1,W2) + b2 # output layer
 
-        self.var_list = [W1, b1, W2, b2]
+        # self.var_list = [W1, b1, W2, b2]
 
         # vanilla single-task loss
         self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=self.y))
@@ -52,6 +61,7 @@ class Model:
 
         # sampling a random class from softmax
         probs = tf.nn.softmax(self.y)
+        # probs = self.y
         class_ind = tf.to_int32(tf.multinomial(tf.log(probs), 1)[0][0])
 
         if(plot_diffs):
@@ -114,6 +124,19 @@ class Model:
         for v in range(len(self.var_list)):
             self.ewc_loss += (lam/2) * tf.reduce_sum(tf.multiply(self.F_accum[v].astype(np.float32),tf.square(self.var_list[v] - self.star_vars[v])))
         self.train_step = tf.train.GradientDescentOptimizer(0.1).minimize(self.ewc_loss)
+    
+    ## TRAIN TEST MLP
+    # def get_fish():
+    #     @tf.function
+    #     def train_fish(x, y, mod):
+    #         with tf.GradientTape() as tape:
+    #             y_out = mod(x)
+    #             c_index = tf.argmax(y_out,1)[0]
+    #             loss = tf.math.log(y_out[0,c_index])
+    #             # loss = tf.keras.losses.categorical_crossentropy(y,y_out)
+
+    #         gradients = tape.gradient(loss,mod.trainable_weights)
+    #         return gradients
 
 
 
