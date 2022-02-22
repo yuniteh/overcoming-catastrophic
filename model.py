@@ -1,5 +1,6 @@
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
+import tensorflow as tf
 import numpy as np
 from copy import deepcopy
 import matplotlib.pyplot as plt
@@ -18,18 +19,18 @@ def bias_variable(shape):
     return tf.Variable(initial)
 
 class Model(Model):
-    def __init__(self, x, y_,n_class=10):
+    def __init__(self, n_class=10):
         super(Model, self).__init__()
         self.dense1 = Dense(50,activation='relu')
         self.dense2 = Dense(n_class)
-        self.var_list = self.trainable_weights
-        self.y = self.dense2(self.dense1(x))
-        self.var_list = self.trainable_weights
+        # self.var_list = self.trainable_weights
+        # self.y = self.dense2(self.dense1(x))
+        # self.var_list = self.trainable_weights
 
-        in_dim = int(x.get_shape()[1]) # 784 for MNIST
-        out_dim = int(y_.get_shape()[1]) # 10 for MNIST
+        # in_dim = int(x.get_shape()[1]) # 784 for MNIST
+        # out_dim = int(y_.get_shape()[1]) # 10 for MNIST
         
-        self.x = x # input placeholder
+        # self.x = x # input placeholder
 
         # simple 2-layer network
         # W1 = weight_variable([in_dim,50])
@@ -42,22 +43,24 @@ class Model(Model):
         # self.y = tf.matmul(h1,W2) + b2 # output layer
 
         # self.var_list = [W1, b1, W2, b2]
-
-        # vanilla single-task loss
-        self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=self.y))
-        self.set_vanilla_loss()
-
-        # performance metrics
-        correct_prediction = tf.equal(tf.argmax(self.y,1), tf.argmax(y_,1))
+    
+    def acc(self, x, y):
+        self.y = self.call(x)
+        correct_prediction = tf.equal(tf.argmax(self.y,1), tf.argmax(y,1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+        return self.accuracy
+    
+    def call(self, x):
+        x = self.dense1(x)
+        return self.dense2(x)
 
     def compute_fisher(self, imgset, sess, num_samples=200, plot_diffs=False, disp_freq=10):
         # computer Fisher information for each parameter
 
         # initialize Fisher information for most recent task
         self.F_accum = []
-        for v in range(len(self.var_list)):
-            self.F_accum.append(np.zeros(self.var_list[v].get_shape().as_list()))
+        for v in range(len(self.trainable_weights)):
+            self.F_accum.append(np.zeros(self.trainable_weights[v].get_shape().as_list()))
 
         # sampling a random class from softmax
         probs = tf.nn.softmax(self.y)
@@ -69,7 +72,7 @@ class Model(Model):
             F_prev = deepcopy(self.F_accum)
             mean_diffs = np.zeros(0)
 
-        fish_gra = tf.gradients(tf.log(probs[0,class_ind]), self.var_list)
+        fish_gra = tf.gradients(tf.log(probs[0,class_ind]), self.trainable_weights)
         for i in range(num_samples):
             # select random input image
             im_ind = np.random.randint(imgset.shape[0])
@@ -102,17 +105,18 @@ class Model(Model):
         # used for saving optimal weights after most recent task training
         self.star_vars = []
 
-        for v in range(len(self.var_list)):
-            self.star_vars.append(self.var_list[v].eval())
+        for v in range(len(self.trainable_weights)):
+            self.star_vars.append(self.trainable_weights[v].eval())
 
     def restore(self, sess):
         # reassign optimal weights for latest task
         if hasattr(self, "star_vars"):
-            for v in range(len(self.var_list)):
-                sess.run(self.var_list[v].assign(self.star_vars[v]))
+            for v in range(len(self.trainable_weights)):
+                sess.run(self.trainable_weights[v].assign(self.star_vars[v]))
 
-    def set_vanilla_loss(self):
-        self.train_step = tf.train.GradientDescentOptimizer(0.1).minimize(self.cross_entropy)
+    def set_vanilla_loss(self,y):
+        self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=self.y))
+        # self.train_step = tf.train.GradientDescentOptimizer(0.1).minimize(self.cross_entropy)
 
     def update_ewc_loss(self, lam):
         # elastic weight consolidation
@@ -121,8 +125,8 @@ class Model(Model):
         if not hasattr(self, "ewc_loss"):
             self.ewc_loss = self.cross_entropy
 
-        for v in range(len(self.var_list)):
-            self.ewc_loss += (lam/2) * tf.reduce_sum(tf.multiply(self.F_accum[v].astype(np.float32),tf.square(self.var_list[v] - self.star_vars[v])))
+        for v in range(len(self.trainable_weights)):
+            self.ewc_loss += (lam/2) * tf.reduce_sum(tf.multiply(self.F_accum[v].astype(np.float32),tf.square(self.trainable_weights[v] - self.star_vars[v])))
         self.train_step = tf.train.GradientDescentOptimizer(0.1).minimize(self.ewc_loss)
     
     ## TRAIN TEST MLP
@@ -137,6 +141,20 @@ class Model(Model):
 
     #         gradients = tape.gradient(loss,mod.trainable_weights)
     #         return gradients
+
+def get_train_ewc():
+    @tf.function
+    def train_step(x, y, mod, optimizer, train_loss, train_accuracy, lam = 0):
+        with tf.GradientTape() as tape:
+            y_out = mod(x,training=True)
+            loss = tf.keras.losses.categorical_crossentropy(y,y_out,from_logits=True)
+        gradients = tape.gradient(loss,mod.trainable_weights)
+        optimizer.apply_gradients(zip(gradients, mod.trainable_weights))
+
+        train_loss(loss)
+        train_accuracy(y, y_out)
+    
+    return train_step
 
 
 
