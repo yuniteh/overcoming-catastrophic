@@ -110,8 +110,9 @@ class Model(Model):
         self.star_vars = []
 
         for v in range(len(self.trainable_weights)):
-            self.star_vars.append(np.zeros(self.trainable_weights[v].shape))
-            self.star_vars[v] = deepcopy(self.trainable_weights[v].numpy())
+            # self.star_vars.append(np.zeros(self.trainable_weights[v].shape))
+            # self.star_vars[v] = deepcopy(self.trainable_weights[v].eval())
+            self.star_vars.append(deepcopy(self.trainable_weights[v].numpy()))
 
     def restore(self):
         # reassign optimal weights for latest task
@@ -151,18 +152,20 @@ def get_fish():
 
 def get_train_ewc():
     @tf.function
-    def train_step(x, y, mod, optimizer, train_loss, train_accuracy, lam = 0):
+    def train_step(x, y, mod, optimizer, train_loss, train_loss2, train_accuracy, lam = 0):
         with tf.GradientTape() as tape:
             y_out = mod(x,training=True)
             loss = tf.keras.losses.categorical_crossentropy(y,y_out,from_logits=True)
             if hasattr(mod, "F_accum"):
-                print('hi')
                 for v in range(len(mod.trainable_weights)):
+                    temp_loss = tf.reduce_sum(tf.multiply(mod.F_accum[v].astype(np.float32),tf.square(mod.trainable_weights[v] - mod.star_vars[v])))
                     loss += (lam/2) * tf.reduce_sum(tf.multiply(mod.F_accum[v].astype(np.float32),tf.square(mod.trainable_weights[v] - mod.star_vars[v])))
         gradients = tape.gradient(loss,mod.trainable_weights)
         optimizer.apply_gradients(zip(gradients, mod.trainable_weights))
     
         train_loss(loss)
+        if hasattr(mod, "F_accum"):
+            train_loss2(temp_loss)
         train_accuracy(y, y_out)
     
     return train_step

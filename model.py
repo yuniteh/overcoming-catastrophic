@@ -117,7 +117,7 @@ class Model(Model):
         self.star_vars = []
 
         for v in range(len(self.var_list)):
-            self.star_vars.append(self.var_list[v].eval())
+            self.star_vars.append(deepcopy(self.var_list[v].eval()))#self.var_list[v].eval())
             # self.star_vars.append(np.zeros(self.var_list[v].shape))
             # self.star_vars[v] = deepcopy(self.var_list[v].numpy())
 
@@ -125,8 +125,8 @@ class Model(Model):
         # reassign optimal weights for latest task
         if hasattr(self, "star_vars"):
             for v in range(len(self.var_list)):
-                # sess.run(self.var_list[v].assign(self.star_vars[v]))
-                self.var_list[v] = deepcopy(self.star_vars[v])
+                sess.run(self.var_list[v].assign(self.star_vars[v]))
+                # self.var_list[v] = deepcopy(self.star_vars[v])
 
     def set_vanilla_loss(self):
         self.train_step = tf.train.GradientDescentOptimizer(0.1).minimize(self.cross_entropy)
@@ -141,6 +141,7 @@ class Model(Model):
             self.ewc_loss = self.cross_entropy
 
         for v in range(len(self.var_list)):
+            self.ewc_temp = (lam/2) * tf.reduce_sum(tf.multiply(self.F_accum[v].astype(np.float32),tf.square(self.var_list[v] - self.star_vars[v])))
             self.ewc_loss += (lam/2) * tf.reduce_sum(tf.multiply(self.F_accum[v].astype(np.float32),tf.square(self.var_list[v] - self.star_vars[v])))
         self.train_step = tf.train.GradientDescentOptimizer(0.1).minimize(self.ewc_loss)
     
