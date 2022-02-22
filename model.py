@@ -63,21 +63,25 @@ class Model(Model):
             self.F_accum.append(np.zeros(self.trainable_weights[v].get_shape().as_list()))
 
         # sampling a random class from softmax
-        probs = tf.nn.softmax(self.y)
-        # probs = self.y
-        class_ind = tf.to_int32(tf.multinomial(tf.log(probs), 1)[0][0])
+        # probs = tf.nn.softmax(self.y)
+        # # probs = self.y
+        # class_ind = tf.argmax(probs,1)[0]
+        # class_ind = tf.to_int32(tf.multinomial(tf.log(probs), 1)[0][0])
 
         if(plot_diffs):
             # track differences in mean Fisher info
             F_prev = deepcopy(self.F_accum)
             mean_diffs = np.zeros(0)
 
-        fish_gra = tf.gradients(tf.log(probs[0,class_ind]), self.trainable_weights)
+        # fish_gra = tf.gradients(tf.math.log(probs[0,class_ind]), self.trainable_weights)
+
+        fish_gra = get_fish()
         for i in range(num_samples):
             # select random input image
             im_ind = np.random.randint(imgset.shape[0])
             # compute first-order derivatives
-            ders = sess.run(fish_gra, feed_dict={self.x: imgset[im_ind:im_ind+1]})
+            # ders = sess.run(fish_gra, feed_dict={self.x: imgset[im_ind:im_ind+1]})
+            ders = fish_gra(imgset[im_ind:im_ind+1],self)
             # square the derivatives and add to total
             for v in range(len(self.F_accum)):
                 self.F_accum[v] += np.square(ders[v])
@@ -106,13 +110,16 @@ class Model(Model):
         self.star_vars = []
 
         for v in range(len(self.trainable_weights)):
-            self.star_vars.append(self.trainable_weights[v].eval())
+            self.star_vars.append(np.zeros(self.trainable_weights[v].shape))
+            self.star_vars[v] = deepcopy(self.trainable_weights[v].numpy())
 
-    def restore(self, sess):
+    def restore(self):
         # reassign optimal weights for latest task
         if hasattr(self, "star_vars"):
+            print('hi')
             for v in range(len(self.trainable_weights)):
-                sess.run(self.trainable_weights[v].assign(self.star_vars[v]))
+                self.trainable_weights[v] = deepcopy(self.star_vars[v])
+                # sess.run(self.trainable_weights[v].assign(self.star_vars[v]))
 
     def set_vanilla_loss(self,y):
         self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=self.y))
@@ -129,18 +136,19 @@ class Model(Model):
             self.ewc_loss += (lam/2) * tf.reduce_sum(tf.multiply(self.F_accum[v].astype(np.float32),tf.square(self.trainable_weights[v] - self.star_vars[v])))
         self.train_step = tf.train.GradientDescentOptimizer(0.1).minimize(self.ewc_loss)
     
-    ## TRAIN TEST MLP
-    # def get_fish():
-    #     @tf.function
-    #     def train_fish(x, y, mod):
-    #         with tf.GradientTape() as tape:
-    #             y_out = mod(x)
-    #             c_index = tf.argmax(y_out,1)[0]
-    #             loss = tf.math.log(y_out[0,c_index])
-    #             # loss = tf.keras.losses.categorical_crossentropy(y,y_out)
+# TRAIN TEST MLP
+def get_fish():
+    @tf.function
+    def train_fish(x, mod):
+        with tf.GradientTape() as tape:
+            y_out = tf.nn.softmax(mod(x))
+            c_index = tf.argmax(y_out,1)[0]
+            loss = tf.math.log(y_out[0,c_index])
+            # loss = tf.keras.losses.categorical_crossentropy(y,y_out)
 
-    #         gradients = tape.gradient(loss,mod.trainable_weights)
-    #         return gradients
+        gradients = tape.gradient(loss,mod.trainable_weights)
+        return gradients
+    return train_fish
 
 def get_train_ewc():
     @tf.function
@@ -148,9 +156,12 @@ def get_train_ewc():
         with tf.GradientTape() as tape:
             y_out = mod(x,training=True)
             loss = tf.keras.losses.categorical_crossentropy(y,y_out,from_logits=True)
+            if lam != 0:
+                for v in range(len(mod.trainable_weights)):
+                    loss += (lam/2) * tf.reduce_sum(tf.multiply(mod.FIM[v],tf.square(mod.trainable_weights[v] - mod.star_vars[v])))
         gradients = tape.gradient(loss,mod.trainable_weights)
         optimizer.apply_gradients(zip(gradients, mod.trainable_weights))
-
+    
         train_loss(loss)
         train_accuracy(y, y_out)
     
